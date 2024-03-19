@@ -1,0 +1,196 @@
+//Everything will be passed on the development org.all test cases will be passed in both .
+
+1.public class OpportunityProcessor {
+    
+    // Method to calculate the total amount of closed won opportunities
+    public static Decimal calculateClosedWonTotal() {
+        Decimal totalAmount = 0;
+        List<Opportunity> closedWonOpps = [SELECT Amount FROM Opportunity WHERE StageName = 'Closed Won'];
+        
+        for(Opportunity opp : closedWonOpps) {
+            totalAmount += opp.Amount;
+        }
+        
+        return totalAmount;
+    }
+    
+    // Method to update opportunity stage based on certain criteria
+    public static void updateOpportunityStage(List<Opportunity> oppsToUpdate) {
+        for(Opportunity opp : oppsToUpdate) {
+            if(opp.Amount > 10000 && opp.StageName != 'Negotiation') {
+                opp.StageName = 'Negotiation';
+            } else if(opp.Amount < 5000 && opp.StageName != 'Prospecting') {
+                opp.StageName = 'Prospecting';
+            }
+        }
+        
+        update oppsToUpdate;
+    }
+
+    //Test classes
+    @isTest
+@isTest
+private class OpportunityProcessorTest {
+    
+    @isTest
+    static void testCalculateClosedWonTotal() {
+        // Create test data
+        Opportunity opp1 = new Opportunity(Name = 'Test Opp 1', StageName = 'Closed Won', Amount = 1000,CloseDate = System.Today());
+        Opportunity opp2 = new Opportunity(Name = 'Test Opp 2', StageName = 'Closed Won', Amount = 2000,CloseDate = System.Today());
+        Opportunity opp3 = new Opportunity(Name = 'Test Opp 3', StageName = 'Proposal', Amount = 3000,CloseDate = System.Today());
+        insert new List<Opportunity>{opp1, opp2, opp3};
+        
+        // Call the method to calculate total amount of closed won opportunities
+        Decimal totalAmount = OpportunityProcessor.calculateClosedWonTotal();
+        
+        // Verify the total amount
+        System.assertEquals(3000, totalAmount);
+    }
+    
+    @isTest
+    static void testUpdateOpportunityStage() {
+        // Create test data
+        Opportunity opp1 = new Opportunity(Name = 'Test Opp 1', StageName = 'Qualification', Amount = 2000, CloseDate = System.Today());
+        Opportunity opp2 = new Opportunity(Name = 'Test Opp 2', StageName = 'Closed Won', Amount = 8000, CloseDate = System.Today());
+        insert new List<Opportunity>{opp1, opp2};
+        
+        // Call the method to update opportunity stage
+        OpportunityProcessor.updateOpportunityStage(new List<Opportunity>{opp1, opp2});
+        
+        // Retrieve the updated opportunities
+        opp1 = [SELECT StageName FROM Opportunity WHERE Id = :opp1.Id];
+        opp2 = [SELECT StageName FROM Opportunity WHERE Id = :opp2.Id];
+        
+        // Verify the updated stages
+      System.assertEquals('Prospecting', opp1.StageName);
+      System.assertNotEquals('Negotiation', opp2.StageName);
+    }
+}
+2.public class AccountActivationService {
+    
+    // Method to handle account activation and default contact creation
+    public static void activateAccount(Account acc, String activationSummary) {
+        if(acc.Type == 'Customer' && !acc.Active__c) {
+            acc.Active__c = true;
+            acc.Account_Activation_Summary__c = activationSummary;
+            insert acc;
+            
+            createDefaultContact(acc);
+        }
+    }
+    
+    // Method to create default contact for the account
+    private static void createDefaultContact(Account acc) {
+        Contact defaultContact = new Contact();
+        defaultContact.FirstName = acc.Name;
+        defaultContact.LastName = 'Customer Representative';
+        defaultContact.Email = acc.Company_Email__c;
+        defaultContact.Phone = acc.Phone;
+        defaultContact.AccountId = acc.Id;
+        insert defaultContact;
+    }
+    
+    // Method to make Account Activation Summary field required in UI
+    public static void makeActivationSummaryRequired() {
+        List<Layout> layouts = [SELECT Id FROM Layout WHERE SObjectType = 'Account'];
+        for(Layout layout : layouts) {
+            MetadataService.Layout metadataLayout = MetadataServiceUtil.retrieveLayout(layout.Id);
+            for(MetadataService.LayoutSection section : metadataLayout.sections) {
+                for(MetadataService.LayoutColumn column : section.columns) {
+                    for(MetadataService.LayoutItem item : column.layoutItems) {
+                        if(item.layoutComponents != null) {
+                            for(MetadataService.LayoutComponent component : item.layoutComponents) {
+                                if(component.type == 'Field' && component.field == 'Account.Account_Activation_Summary__c') {
+                                    component.required = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            MetadataServiceUtil.updateLayout(metadataLayout);
+        }
+    }
+}
+//test classes
+@isTest
+private class AccountActivationServiceTest {
+    
+    @isTest
+    static void testActivateAccount_CustomerType() {
+        // Create test data
+        Account acc = new Account(Name = 'Test Account', Type = 'Customer');
+        insert acc;
+        
+        // Call the method to activate the account
+        AccountActivationService.activateAccount(acc, 'Activation summary');
+        
+        // Retrieve the updated account
+        acc = [SELECT Id, Active_c, Account_Activation_Summary_c FROM Account WHERE Id = :acc.Id];
+        
+        // Verify that the account is activated and activation summary is set
+        System.assertEquals(true, acc.Active__c);
+        System.assertEquals('Activation summary', acc.Account_Activation_Summary__c);
+        
+        // Verify that the default contact is created
+        Contact defaultContact = [SELECT Id FROM Contact WHERE AccountId = :acc.Id];
+        System.assertNotEquals(null, defaultContact);
+    }
+    
+    @isTest
+    static void testActivateAccount_NonCustomerType() {
+        // Create test data
+        Account acc = new Account(Name = 'Test Account', Type = 'Partner');
+        insert acc;
+        
+        // Call the method to activate the account
+        AccountActivationService.activateAccount(acc, 'Activation summary');
+        
+        // Retrieve the updated account
+        acc = [SELECT Id, Active_c, Account_Activation_Summary_c FROM Account WHERE Id = :acc.Id];
+        
+        // Verify that the account is not activated and activation summary is not set
+        System.assertEquals(false, acc.Active__c);
+        System.assertEquals(null, acc.Account_Activation_Summary__c);
+        
+        // Verify that no default contact is created
+        List<Contact> defaultContacts = [SELECT Id FROM Contact WHERE AccountId = :acc.Id];
+        System.assertEquals(0, defaultContacts.size());
+    }
+    
+    @isTest
+    static void testMakeActivationSummaryRequired() {
+        // Create test layout
+        MetadataService.Layout testLayout = new MetadataService.Layout();
+        testLayout.fullName = 'Account-TestLayout';
+        MetadataService.LayoutSection testSection = new MetadataService.LayoutSection();
+        testSection.columns = new List<MetadataService.LayoutColumn>{ new MetadataService.LayoutColumn() };
+        MetadataService.LayoutItem testItem = new MetadataService.LayoutItem();
+        testItem.layoutComponents = new List<MetadataService.LayoutComponent>{ new MetadataService.LayoutComponent() };
+        testItem.layoutComponents[0].type = 'Field';
+        testItem.layoutComponents[0].field = 'Account.Account_Activation_Summary__c';
+        testSection.layoutRows = new List<MetadataService.LayoutRow>{ new MetadataService.LayoutRow() };
+        testSection.layoutRows[0].layoutItems = new List<MetadataService.LayoutItem>{ testItem };
+        testLayout.sections = new List<MetadataService.LayoutSection>{ testSection };
+        MetadataServiceUtil.createLayout(testLayout);
+        
+        // Call the method to make activation summary required
+        AccountActivationService.makeActivationSummaryRequired();
+        
+        // Retrieve the updated layout
+        MetadataService.Layout updatedLayout = MetadataServiceUtil.retrieveLayout('Account-TestLayout');
+        
+        // Verify that the activation summary field is required in the layout
+        for(MetadataService.LayoutSection section : updatedLayout.sections) {
+            for(MetadataService.LayoutColumn column : section.columns) {
+                for(MetadataService.LayoutItem item : column.layoutItems) {
+                    for(MetadataService.LayoutComponent component : item.layoutComponents) {
+                        if(component.field == 'Account.Account_Activation_Summary__c') {
+                            System.assertEquals(true, component.required);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
